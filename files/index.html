@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eventos Panamá - Radar de Activaciones</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --accent:#22c55e; --text:#e2e8f0; --muted:#94a3b8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:24px 32px; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+  h1 { font-size:20px; margin:0; }
+  .sub { color:var(--muted); font-size:13px; margin-top:4px; }
+  button { background:var(--accent); color:#052e16; border:none; padding:10px 18px; border-radius:8px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  #estado { font-size:12px; color:var(--muted); margin-top:6px; }
+  main { padding:24px 32px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+  .card { background:var(--card); border-radius:12px; padding:16px; border:1px solid #334155; }
+  .card h3 { margin:0 0 8px; font-size:15px; }
+  .card p { margin:4px 0; font-size:13px; color:var(--muted); }
+  .badge { display:inline-block; background:#334155; color:var(--text); font-size:11px; padding:2px 8px; border-radius:999px; margin-top:8px; }
+  .empty { color:var(--muted); padding:40px; text-align:center; }
+  a.link { color:var(--accent); text-decoration:none; font-size:13px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Radar de Eventos - Ciudad de Panamá</h1>
+    <div class="sub">Identifica ferias, activaciones y espacios donde tu marca puede encajar</div>
+    <div id="estado">Cargando...</div>
+  </div>
+  <div>
+    <button id="btnActualizar" onclick="actualizar()">Actualizar eventos</button>
+    <a class="link" href="/api/descargar/csv" style="margin-left:12px;">Descargar CSV</a>
+  </div>
+</header>
+<main>
+  <div id="contenedor" class="grid"></div>
+</main>
+
+<script>
+async function cargarEventos() {
+  const res = await fetch('/api/eventos');
+  const data = await res.json();
+  const cont = document.getElementById('contenedor');
+  if (!data.length) {
+    cont.innerHTML = '<div class="empty">Sin datos aún. Pulsa "Actualizar eventos" para correr el scraper.</div>';
+    return;
+  }
+  cont.innerHTML = data.map(ev => `
+    <div class="card">
+      <h3>${ev.nombre}</h3>
+      <p>📅 ${ev.fecha || 'Fecha no especificada'}</p>
+      <p>📍 ${ev.lugar || '—'}</p>
+      <p>👤 ${ev.organizador || '—'} ${ev.email ? '· ' + ev.email : ''} ${ev.telefono ? '· ' + ev.telefono : ''}</p>
+      <a class="link" href="${ev.url}" target="_blank">Ver evento →</a>
+      <div class="badge">${ev.fuente}</div>
+    </div>
+  `).join('');
+}
+
+async function checarEstado() {
+  const res = await fetch('/api/estado');
+  const s = await res.json();
+  const el = document.getElementById('estado');
+  const btn = document.getElementById('btnActualizar');
+  if (s.corriendo) {
+    el.textContent = 'Actualizando...';
+    btn.disabled = true;
+  } else {
+    btn.disabled = false;
+    el.textContent = s.ultima_actualizacion
+      ? `Última actualización: ${s.ultima_actualizacion} · ${s.total} eventos` + (s.error ? ` · error: ${s.error}` : '')
+      : 'Sin actualizar aún';
+  }
+}
+
+async function actualizar() {
+  await fetch('/api/actualizar', { method: 'POST' });
+  poll();
+}
+
+function poll() {
+  const interval = setInterval(async () => {
+    await checarEstado();
+    const res = await fetch('/api/estado');
+    const s = await res.json();
+    if (!s.corriendo) {
+      clearInterval(interval);
+      cargarEventos();
+    }
+  }, 3000);
+}
+
+cargarEventos();
+checarEstado();
+</script>
+</body>
+</html>
