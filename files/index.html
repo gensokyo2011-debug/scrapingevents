@@ -57,7 +57,7 @@ async function cargarEventos() {
       <p>👤 ${ev.organizador || '—'} ${ev.email ? '· ' + ev.email : ''} ${ev.telefono ? '· ' + ev.telefono : ''}</p>
       <p>🎯 ${ev.segmento || 'Por revisar'}${ev.encaje_sanchito ? ' · ' + ev.encaje_sanchito : ''}</p>
       <a class="link" href="${ev.url}" target="_blank">Ver evento →</a>
-      <div class="badge">${ev.fuente}</div>
+      <div class="badge">${ev.fuente} · ${ev.nivel_confianza || 'media'}</div>
     </div>
   `).join('');
 }

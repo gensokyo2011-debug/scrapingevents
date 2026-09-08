@@ -62,6 +62,8 @@ class Evento:
     tipo_fuente: str = ""  # "estatica" | "dinamica"
     segmento: str = ""
     encaje_sanchito: str = ""
+    ciudad_provincia: str = "Ciudad de Panama"
+    nivel_confianza: str = "media"
 
 
 def extraer_contacto(texto: str) -> tuple[str, str]:
@@ -90,28 +92,45 @@ FECHA_CORTA_RE = re.compile(
     r"(?:\s*[,/-]?\s*(20\d{2}))?\b",
     re.IGNORECASE,
 )
+FECHA_NUMERICA_RE = re.compile(r"\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b")
+FECHA_DIA_MES_RE = re.compile(
+    r"\b(\d{1,2})\s+(" + "|".join(MESES) + r")\b", re.IGNORECASE
+)
 
 
 def extraer_fecha_desde_texto(texto: str, hoy: date | None = None) -> str:
-    """Extrae fechas compactas como 'DIC 3' o 'JUN 18' de una tarjeta."""
-    coincidencia = FECHA_CORTA_RE.search(texto)
-    if not coincidencia:
-        return ""
+    """Extrae fechas compactas como 'DIC 3' o '10 Sep' de una tarjeta."""
     inicio = hoy or date.today()
-    mes = MESES[coincidencia.group(1).lower()]
-    dia = int(coincidencia.group(2))
-    anio = int(coincidencia.group(3) or inicio.year)
+    numerica = FECHA_NUMERICA_RE.search(texto)
+    if numerica:
+        dia, mes, anio = map(int, numerica.groups())
+        anio += 2000 if anio < 100 else 0
+    else:
+        coincidencia = FECHA_CORTA_RE.search(texto)
+        invertida = FECHA_DIA_MES_RE.search(texto)
+        if coincidencia:
+            mes = MESES[coincidencia.group(1).lower()]
+            dia = int(coincidencia.group(2))
+            anio = int(coincidencia.group(3) or inicio.year)
+        elif invertida:
+            dia = int(invertida.group(1))
+            mes = MESES[invertida.group(2).lower()]
+            anio = inicio.year
+        else:
+            return ""
     try:
         fecha = date(anio, mes, dia)
     except ValueError:
         return ""
-    if not coincidencia.group(3) and fecha < inicio:
+    if not numerica and (not coincidencia or not coincidencia.group(3)) and fecha < inicio:
         fecha = date(anio + 1, mes, dia)
     return fecha.isoformat()
 
 
 def clasificar_evento(evento: Evento) -> Evento:
     """Clasifica el potencial B2B/B2C del evento para Sanchito Lunch."""
+    if any(red in evento.url.lower() for red in ("facebook.com", "instagram.com", "tiktok.com")):
+        evento.nivel_confianza = "no_verificado"
     texto = " ".join((evento.nombre, evento.categoria, evento.organizador)).lower()
     claves_b2b = ("negocio", "networking", "foro", "convencion", "convención",
                   "proveedor", "proyecto", "corporativ", "empresarial", "summit",
@@ -242,6 +261,38 @@ def scrape_calendario_panama() -> list[Evento]:
             ))
     except requests.RequestException as e:
         print(f"[!] Error en calendariodepanama.com: {e}", file=sys.stderr)
+    return eventos
+
+
+def scrape_panama_convention_center() -> list[Evento]:
+    """Calendario oficial del Panama Convention Center."""
+    url = "https://panamaconventions.com/"
+    eventos: list[Evento] = []
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=20)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        for tarjeta in soup.select("div.event_listing"):
+            titulo_tag = tarjeta.select_one(".wpem-event-title h3")
+            link_tag = tarjeta.select_one("a[href*='/event/']")
+            if not titulo_tag or not link_tag:
+                continue
+            texto = tarjeta.get_text(" ", strip=True)
+            fecha = extraer_fecha_desde_texto(texto)
+            categoria = " ".join(tarjeta.get("class", []))
+            eventos.append(Evento(
+                nombre=titulo_tag.get_text(" ", strip=True),
+                fecha=fecha,
+                lugar="Panama Convention Center",
+                categoria=categoria,
+                organizador="Panama Convention Center",
+                url=urljoin(url, link_tag["href"]),
+                fuente="panamaconventions.com",
+                tipo_fuente="estatica",
+                nivel_confianza="alta",
+            ))
+    except requests.RequestException as e:
+        print(f"[!] Error en panamaconventions.com: {e}", file=sys.stderr)
     return eventos
 
 
@@ -376,6 +427,7 @@ def recolectar_todo(incluir_dinamicas: bool = True) -> list[Evento]:
     eventos += scrape_micultura()
     time.sleep(1)
     eventos += scrape_calendario_panama()
+    eventos += scrape_panama_convention_center()
 
     if incluir_dinamicas:
         print("-> Fuentes dinámicas (Playwright)...")
