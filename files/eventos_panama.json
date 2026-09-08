@@ -1,7 +1,7 @@
 [
   {
     "nombre": "DIC\n3\nNEGOCIOS & NETWORKING\nP.H. CONNECT 2️⃣0️⃣2️⃣6️⃣ | 2° FORO de Innovación Constructiva, Movilidad & Seguridad en PHs y Proyectos 🔝| EL DEPH®\n08:00\nEL DEPH® www.eldeph.com\nGratis con Pre-Registro aprobado según Perfil\nVER DETALLES",
-    "fecha": "",
+    "fecha": "2026-12-03",
     "lugar": "",
     "categoria": "",
     "organizador": "",
@@ -9,18 +9,8 @@
     "telefono": "",
     "url": "https://planpty.com/eventos/ph-connect-2026-2-foro-de-innovacin-constructiva-movilidad-seguridad-en-phs-y-proyectos-el-deph-wwweldephcom",
     "fuente": "planpty.com",
-    "tipo_fuente": "dinamica"
-  },
-  {
-    "nombre": "JUN\n18\nNEGOCIOS & NETWORKING\n*¡P.H. SOLUTIONS & SUPPLY SUMMIT 2027!*🔝 | 9 ª Convención de Negocios entre P.H.S, Proyectos y Proveedores.\n01:00\nEL DEPH®\nVER DETALLES",
-    "fecha": "",
-    "lugar": "",
-    "categoria": "",
-    "organizador": "",
-    "email": "",
-    "telefono": "",
-    "url": "https://planpty.com/eventos/ph-solutions-supply-summit-2027-9-convencin-de-negocios-entre-phs-proyectos-y-proveedores",
-    "fuente": "planpty.com",
-    "tipo_fuente": "dinamica"
+    "tipo_fuente": "dinamica",
+    "segmento": "B2B",
+    "encaje_sanchito": "catering, networking, abastecimiento corporativo"
   }
 ]

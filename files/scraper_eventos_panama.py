@@ -60,6 +60,8 @@ class Evento:
     url: str = ""
     fuente: str = ""
     tipo_fuente: str = ""  # "estatica" | "dinamica"
+    segmento: str = ""
+    encaje_sanchito: str = ""
 
 
 def extraer_contacto(texto: str) -> tuple[str, str]:
@@ -67,6 +69,72 @@ def extraer_contacto(texto: str) -> tuple[str, str]:
     email = EMAIL_RE.search(texto)
     telefono = PHONE_RE.search(texto)
     return (email.group(0) if email else "", telefono.group(0).strip() if telefono else "")
+
+
+MESES = {
+    "ene": 1, "enero": 1, "jan": 1, "january": 1,
+    "feb": 2, "febrero": 2, "february": 2,
+    "mar": 3, "marzo": 3, "march": 3,
+    "abr": 4, "abril": 4, "apr": 4, "april": 4,
+    "may": 5, "mayo": 5,
+    "jun": 6, "junio": 6, "june": 6,
+    "jul": 7, "julio": 7, "july": 7,
+    "ago": 8, "agosto": 8, "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "septiembre": 9, "september": 9,
+    "oct": 10, "octubre": 10, "october": 10,
+    "nov": 11, "noviembre": 11, "november": 11,
+    "dic": 12, "diciembre": 12, "dec": 12, "december": 12,
+}
+FECHA_CORTA_RE = re.compile(
+    r"\b(" + "|".join(MESES) + r")\s*[-/]?\s*(\d{1,2})"
+    r"(?:\s*[,/-]?\s*(20\d{2}))?\b",
+    re.IGNORECASE,
+)
+
+
+def extraer_fecha_desde_texto(texto: str, hoy: date | None = None) -> str:
+    """Extrae fechas compactas como 'DIC 3' o 'JUN 18' de una tarjeta."""
+    coincidencia = FECHA_CORTA_RE.search(texto)
+    if not coincidencia:
+        return ""
+    inicio = hoy or date.today()
+    mes = MESES[coincidencia.group(1).lower()]
+    dia = int(coincidencia.group(2))
+    anio = int(coincidencia.group(3) or inicio.year)
+    try:
+        fecha = date(anio, mes, dia)
+    except ValueError:
+        return ""
+    if not coincidencia.group(3) and fecha < inicio:
+        fecha = date(anio + 1, mes, dia)
+    return fecha.isoformat()
+
+
+def clasificar_evento(evento: Evento) -> Evento:
+    """Clasifica el potencial B2B/B2C del evento para Sanchito Lunch."""
+    texto = " ".join((evento.nombre, evento.categoria, evento.organizador)).lower()
+    claves_b2b = ("negocio", "networking", "foro", "convencion", "convención",
+                  "proveedor", "proyecto", "corporativ", "empresarial", "summit",
+                  "expo", "comercial")
+    claves_b2c = ("gastronom", "festival", "oktoberfest", "recreativ", "deport",
+                  "familia", "concierto", "sabores", "feria")
+    es_b2b = any(clave in texto for clave in claves_b2b)
+    es_b2c = any(clave in texto for clave in claves_b2c)
+    if es_b2b and es_b2c:
+        evento.segmento = "Mixto"
+    elif es_b2b:
+        evento.segmento = "B2B"
+    elif es_b2c:
+        evento.segmento = "B2C"
+    else:
+        evento.segmento = "Por revisar"
+    oportunidades = []
+    if es_b2b:
+        oportunidades.extend(("catering", "networking", "abastecimiento corporativo"))
+    if es_b2c:
+        oportunidades.extend(("venta directa", "degustacion", "stand", "patrocinio"))
+    evento.encaje_sanchito = ", ".join(dict.fromkeys(oportunidades))
+    return evento
 
 
 def fecha_en_horizonte(fecha_texto: str, hoy: date | None = None) -> bool:
@@ -281,7 +349,7 @@ def scrape_planpty() -> list[Evento]:
                 email, tel = extraer_contacto(nombre)
                 eventos.append(Evento(
                     nombre=nombre,
-                    fecha="",
+                    fecha=extraer_fecha_desde_texto(nombre),
                     lugar="",
                     categoria="",
                     organizador="",
@@ -316,6 +384,7 @@ def recolectar_todo(incluir_dinamicas: bool = True) -> list[Evento]:
         eventos += ev_brite
         eventos += scrape_planpty()
 
+    eventos = [clasificar_evento(evento) for evento in eventos]
     eventos = filtrar_por_horizonte(eventos)
     print(f"-> Ventana de monitoreo: próximos {HORIZONTE_MESES} meses ({len(eventos)} eventos)")
     return eventos
