@@ -28,10 +28,14 @@ import re
 import sys
 import time
 from dataclasses import dataclass, asdict, field
+from datetime import date, datetime
 from typing import Optional
+from urllib.parse import urljoin
 
+import dateparser
 import requests
 from bs4 import BeautifulSoup
+from dateutil.relativedelta import relativedelta
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -41,6 +45,7 @@ HEADERS = {
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 PHONE_RE = re.compile(r"(\+?507[\s.-]?)?\(?\d{3,4}\)?[\s.-]?\d{4}")
+HORIZONTE_MESES = 4
 
 
 @dataclass
@@ -62,6 +67,34 @@ def extraer_contacto(texto: str) -> tuple[str, str]:
     email = EMAIL_RE.search(texto)
     telefono = PHONE_RE.search(texto)
     return (email.group(0) if email else "", telefono.group(0).strip() if telefono else "")
+
+
+def fecha_en_horizonte(fecha_texto: str, hoy: date | None = None) -> bool:
+    """Devuelve si una fecha cae entre hoy y los próximos cuatro meses.
+
+    Las fechas que una fuente no publica o que no se pueden interpretar se
+    conservan para revisión manual, evitando descartar oportunidades válidas.
+    """
+    if not fecha_texto:
+        return True
+
+    inicio = hoy or date.today()
+    referencia = datetime.combine(inicio, datetime.min.time())
+    fecha = dateparser.parse(
+        fecha_texto,
+        languages=["es", "en"],
+        settings={"PREFER_DATES_FROM": "future", "RELATIVE_BASE": referencia},
+    )
+    if not fecha:
+        return True
+
+    limite = inicio + relativedelta(months=HORIZONTE_MESES)
+    return inicio <= fecha.date() <= limite
+
+
+def filtrar_por_horizonte(eventos: list[Evento]) -> list[Evento]:
+    """Conserva eventos dentro de la ventana operativa de cuatro meses."""
+    return [evento for evento in eventos if fecha_en_horizonte(evento.fecha)]
 
 
 # ---------------------------------------------------------------------------
@@ -236,27 +269,25 @@ def scrape_planpty() -> list[Evento]:
             page.goto(url, timeout=30000)
             page.wait_for_load_state("networkidle", timeout=15000)
 
-            # SELECTOR: tarjetas de evento en el grid de PlanPTY
-            tarjetas = page.query_selector_all("article, .event-card, .card-evento")
-            for t in tarjetas:
-                nombre_el = t.query_selector("h2, h3, .titulo")
-                fecha_el = t.query_selector(".fecha, time")
-                lugar_el = t.query_selector(".lugar, .venue")
-                link_el = t.query_selector("a[href]")
-                nombre = nombre_el.inner_text().strip() if nombre_el else None
-                if not nombre:
+            # PlanPTY actualmente publica los eventos como enlaces SSR.
+            enlaces = page.query_selector_all("a[href*='/eventos/']")
+            vistos: set[str] = set()
+            for enlace in enlaces:
+                href = enlace.get_attribute("href")
+                nombre = enlace.inner_text().strip()
+                if not href or not nombre or href in vistos:
                     continue
-                texto = t.inner_text()
-                email, tel = extraer_contacto(texto)
+                vistos.add(href)
+                email, tel = extraer_contacto(nombre)
                 eventos.append(Evento(
                     nombre=nombre,
-                    fecha=fecha_el.inner_text().strip() if fecha_el else "",
-                    lugar=lugar_el.inner_text().strip() if lugar_el else "",
+                    fecha="",
+                    lugar="",
                     categoria="",
                     organizador="",
                     email=email,
                     telefono=tel,
-                    url=link_el.get_attribute("href") if link_el else url,
+                    url=urljoin(url, href),
                     fuente="planpty.com",
                     tipo_fuente="dinamica",
                 ))
@@ -285,6 +316,8 @@ def recolectar_todo(incluir_dinamicas: bool = True) -> list[Evento]:
         eventos += ev_brite
         eventos += scrape_planpty()
 
+    eventos = filtrar_por_horizonte(eventos)
+    print(f"-> Ventana de monitoreo: próximos {HORIZONTE_MESES} meses ({len(eventos)} eventos)")
     return eventos
 
 
